@@ -37,6 +37,7 @@ PRIVATE_KEY_PATH = st.secrets.get(
 
 SEARCH_SERVICE = f"{DB}.ANALYTICS.POLICY_SEARCH"
 SEMANTIC_VIEW = f"{DB}.ANALYTICS.SV_TRANSPARENT_RX"
+USE_CASE_REGISTRY = f"{DB}.GOVERNANCE.USE_CASE_REGISTRY"
 
 DAILY_QUERY_CAP = 50
 SESSION_QUERY_CAP = 8
@@ -45,7 +46,7 @@ PROMPT_CHAR_CAP = 350
 PALETTE = {
     "bg": "#F7F9FA", "card": "#FFFFFF", "navy": "#102A43",
     "teal": "#0F766E", "amber": "#D97706", "green": "#15803D",
-    "muted": "#627D98",
+    "muted": "#627D98", "red": "#B91C1C",
 }
 
 PERSONAS = {
@@ -371,6 +372,27 @@ def load_telemetry():
             "flagged": r[3] or 0, "avg_confidence": r[4] or 0, "minutes_saved": r[5] or 0}
 
 
+def load_use_case_registry():
+    rows, _ = query(f"""
+        SELECT USE_CASE_ID, USE_CASE_NAME, DESCRIPTION, RISK_TIER, STATUS,
+               RATIONALE, OWNER, SIGNED_OFF_BY, SIGNED_OFF_TS, CREATED_TS
+        FROM {DB}.GOVERNANCE.USE_CASE_REGISTRY
+        ORDER BY CREATED_TS
+    """)
+    cols = ["USE_CASE_ID", "USE_CASE_NAME", "DESCRIPTION", "RISK_TIER", "STATUS",
+            "RATIONALE", "OWNER", "SIGNED_OFF_BY", "SIGNED_OFF_TS", "CREATED_TS"]
+    return pd.DataFrame(rows, columns=cols)
+
+
+def set_use_case_status(use_case_id, status, rationale, reviewer):
+    query(f"""
+        UPDATE {DB}.GOVERNANCE.USE_CASE_REGISTRY
+        SET STATUS = %s, RATIONALE = %s, SIGNED_OFF_BY = %s,
+            SIGNED_OFF_TS = CURRENT_TIMESTAMP()
+        WHERE USE_CASE_ID = %s
+    """, (status, rationale, reviewer, use_case_id))
+
+
 # ---------------------------------------------------------------------------
 # Visualization helpers
 # ---------------------------------------------------------------------------
@@ -461,10 +483,11 @@ if _SIS is None:
         )
         st.stop()
 
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "📊 I-65 Spread & Access Pulse",
     "🧠 Governed Cortex Workbench",
     "📈 AI Vital Signs & Cost Ledger",
+    "🛡 Use-Case Governance",
 ])
 
 # =============================================================================
@@ -686,5 +709,61 @@ with tab3:
                                 f"({budget['remaining']} remaining)")
     st.caption("Warehouse `RX_CORTEX_WH` is bound to resource monitor `RX_TRIAL_MONITOR` "
                "(15 credits/mo — alert 75%, suspend 95%, immediate 100%).")
+
+# =============================================================================
+# TAB 4 — Use-Case Governance (registry + declined/retired ledger)
+# =============================================================================
+with tab4:
+    if st.session_state.get("flash"):
+        st.success(st.session_state.pop("flash"))
+
+    st.subheader("Use-Case Registry")
+    reg = load_use_case_registry()
+
+    if reg.empty:
+        st.info("No use cases registered yet.")
+    else:
+        st.dataframe(
+            reg[["USE_CASE_NAME", "RISK_TIER", "STATUS", "OWNER", "SIGNED_OFF_BY", "SIGNED_OFF_TS"]],
+            width="stretch", hide_index=True,
+        )
+
+        declined = reg[reg["STATUS"].isin(["DECLINED", "RETIRED"])]
+        st.subheader("Declined / Retired ledger")
+        if declined.empty:
+            st.caption("No declined or retired use cases.")
+        else:
+            status_color = {"DECLINED": PALETTE["red"], "RETIRED": PALETTE["muted"]}
+            for _, r in declined.iterrows():
+                color = status_color.get(r["STATUS"], PALETTE["muted"])
+                who = r["SIGNED_OFF_BY"] or "—"
+                when = str(r["SIGNED_OFF_TS"]) if not pd.isna(r["SIGNED_OFF_TS"]) else "—"
+                st.markdown(
+                    badge(r["STATUS"], color)
+                    + f"&nbsp;**{r['USE_CASE_NAME']}** — {r['RATIONALE'] or '(no rationale recorded)'}"
+                    + f"\n\n&nbsp;&nbsp;_Signed off by {who} · {when}_",
+                    unsafe_allow_html=True,
+                )
+
+        st.subheader("Update use-case status (sign-off)")
+        with st.form("use_case_signoff"):
+            names = reg["USE_CASE_NAME"].tolist()
+            choice = st.selectbox("Use case", names)
+            action = st.radio("Action", ["Approve", "Decline", "Retire"], horizontal=True)
+            rationale = st.text_area("Rationale (required for Decline / Retire)")
+            reviewer = st.text_input("Reviewer name")
+            submit = st.form_submit_button("Submit sign-off")
+
+        if submit:
+            if not reviewer.strip():
+                st.error("Reviewer name is required.")
+            elif action in ("Decline", "Retire") and not rationale.strip():
+                st.error("Rationale is required to Decline or Retire a use case.")
+            else:
+                status_map = {"Approve": "APPROVED", "Decline": "DECLINED", "Retire": "RETIRED"}
+                uid = reg.loc[reg["USE_CASE_NAME"] == choice, "USE_CASE_ID"].iloc[0]
+                set_use_case_status(uid, status_map[action], rationale.strip(), reviewer.strip())
+                st.session_state.flash = f"{choice} → {status_map[action]}"
+                st.rerun()
 
 st.caption("Transparent Rx · Module B — Streamlit app + Cortex orchestrator")
