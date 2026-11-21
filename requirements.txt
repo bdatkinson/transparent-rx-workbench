@@ -1,0 +1,5 @@
+streamlit>=1.60
+snowflake-connector-python>=3.10
+cryptography
+pandas
+plotly

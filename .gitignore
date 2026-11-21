@@ -1,0 +1,16 @@
+# secrets / credentials
+.streamlit/secrets.toml
+*.p8
+*.pub
+.env
+
+# large data + scratch
+data/
+*.log
+__pycache__/
+.venv/
+
+# dev scratch probes (kept local)
+probe_*.py
+peek_csv.py
+audit_account.py
