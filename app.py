@@ -117,6 +117,14 @@ METHODOLOGY = {
 
 
 # ---------------------------------------------------------------------------
+# FinOps cost model (Enterprise $3.00/credit; XS warehouse ≈ 1 credit/hr)
+# ---------------------------------------------------------------------------
+COST_PER_CREDIT = 3.00
+XS_CREDITS_PER_HOUR = 1.0
+XS_COST_PER_SECOND = COST_PER_CREDIT * XS_CREDITS_PER_HOUR / 3600.0
+
+
+# ---------------------------------------------------------------------------
 # PHI guardrail (client-side pre-flight regex — zero-PHI intercept)
 # ---------------------------------------------------------------------------
 PHI_PATTERNS = {
@@ -206,6 +214,22 @@ def query(sql, params=None):
     cur = conn.cursor()
     cur.execute(sql, params or ())
     return cur.fetchall(), cur
+
+
+def query_cols(sql, params=None):
+    """Like query(), but also returns result column names: (rows, columns).
+    Used to label each value in the Analyst's generated SQL output so every
+    number is traceable to a named column."""
+    if _SIS is not None:
+        df = (_SIS.sql(sql.replace("%s", "?"), params=list(params))
+              if params else _SIS.sql(sql))
+        columns = [str(c) for c in df.columns]
+        return [tuple(r) for r in df.collect()], columns
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(sql, params or ())
+    columns = [d[0] for d in cur.description] if cur.description else []
+    return cur.fetchall(), columns
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +433,14 @@ h1, h2, h3 {color: #102A43;}
 st.title("💊 Transparent Rx Intelligence Workbench")
 st.caption("Powered by Snowflake Cortex · zero-PHI public data · AffirmedRx demo")
 
+st.info(
+    "**Data provenance:** this demo runs exclusively on public CMS/Medicaid files — "
+    "NADAC, Medicaid SDUD, and Medicare Part D prescriber data — aggregated to "
+    "state / therapeutic-class level. **No PHI, no member identifiers, no synthetic "
+    "data.** Every prompt also passes a client-side PHI guardrail before any model "
+    "is called."
+)
+
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 if "query_count" not in st.session_state:
@@ -540,18 +572,22 @@ with tab2:
                     pass
 
                 latency = int((time.time() - t0) * 1000)
+                est_cost = latency / 1000.0 * XS_COST_PER_SECOND
 
                 # execute the generated SQL to get real numbers
                 result_rows = []
+                result_cols = []
                 if sql:
                     try:
-                        result_rows, _ = query(sql)
+                        result_rows, result_cols = query_cols(sql)
                     except Exception as e:
                         st.warning(f"Generated SQL executed with a warning: {e}")
 
                 draft = interpretation or "Draft response pending."
                 if result_rows:
-                    draft += "\n\n**Result:** " + str(result_rows[0])
+                    labeled = (dict(zip(result_cols, result_rows[0]))
+                               if result_cols else result_rows[0])
+                    draft += f"\n\n**Result:** {labeled}"
 
                 citations_json = json.dumps([{
                     "source_title": c["source_title"], "section_ref": c["section_ref"],
@@ -568,8 +604,19 @@ with tab2:
                 st.markdown(f"**Interpretation:** {interpretation}")
 
                 if result_rows:
-                    st.markdown("**Answer:**")
-                    st.code(str(result_rows), language="text")
+                    st.markdown(
+                        "**Answer** — deterministic, computed from the generated SQL "
+                        "(not model output); each value is traceable to a named column:"
+                    )
+                    if result_cols:
+                        st.dataframe(pd.DataFrame(result_rows, columns=result_cols), width="stretch")
+                    else:
+                        st.code(str(result_rows), language="text")
+
+                st.caption(
+                    f"⏱ {latency:,} ms · ≈ ${est_cost:.4f} est. warehouse cost "
+                    f"(XS @ ${COST_PER_CREDIT:.2f}/credit) · Cortex AI-service credits incremental"
+                )
 
                 with st.expander("🔍 Source transparency drawer"):
                     st.markdown(
