@@ -7,7 +7,8 @@ Tabs:
   2. Governed Cortex Workbench   — persona switcher + Cortex Analyst/Search + sign-off
   3. AI Vital Signs & Cost Ledger — live telemetry + FinOps meter
 
-Auth: key-pair as RX_APP_ROLE (least privilege). Zero end-user login.
+Auth: key-pair as RX_APP_ROLE on Community Cloud / self-host; inside Streamlit
+in Snowflake (SiS) the Snowpark session is injected. Zero end-user login.
 """
 import base64
 import json
@@ -96,8 +97,22 @@ def detect_phi(text: str):
 
 
 # ---------------------------------------------------------------------------
-# Snowflake connection (key-pair, cached)
+# Snowflake connection (key-pair, cached) — used ONLY outside Snowflake.
+# Inside Streamlit in Snowflake (SiS), Snowflake injects a Snowpark session via
+# get_active_session(); no connector, secrets, or private key are needed there.
 # ---------------------------------------------------------------------------
+def _sis_session():
+    """Return the injected Snowpark session in Streamlit in Snowflake, else None."""
+    try:
+        from snowflake.snowpark.context import get_active_session
+        return get_active_session()
+    except Exception:
+        return None
+
+
+_SIS = _sis_session()
+
+
 @st.cache_resource(show_spinner=False)
 def get_conn():
     key_b64 = st.secrets.get("SNOWFLAKE_PRIVATE_KEY_B64")
@@ -137,6 +152,15 @@ def get_conn():
 
 
 def query(sql, params=None):
+    """Run SQL and return (rows, cursor). rows is a list of tuples; cursor is
+    None inside Streamlit in Snowflake. Snowpark binds '?' placeholders, so the
+    '%s' style used by the connector is translated for the SiS path."""
+    if _SIS is not None:
+        if params:
+            result = _SIS.sql(sql.replace("%s", "?"), params=list(params)).collect()
+        else:
+            result = _SIS.sql(sql).collect()
+        return [tuple(r) for r in result], None
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(sql, params or ())
@@ -349,18 +373,20 @@ if "session_id" not in st.session_state:
 if "query_count" not in st.session_state:
     st.session_state.query_count = 0
 
-# Connectivity guard — fail loudly and clearly if Snowflake isn't reachable
-try:
-    get_conn()
-except Exception as e:
-    st.error(f"⚠️ Could not connect to Snowflake: {e}")
-    st.info(
-        "**Fix:** open this app's **Settings → Secrets** on Streamlit Cloud, "
-        "paste the full secrets block (including the Snowflake private key as a "
-        "single-line `SNOWFLAKE_PRIVATE_KEY_B64` value), then click **Save** and "
-        "**Reboot**."
-    )
-    st.stop()
+# Connectivity guard — fail loudly and clearly if Snowflake isn't reachable.
+# In SiS the session is already injected, so there's nothing to connect.
+if _SIS is None:
+    try:
+        get_conn()
+    except Exception as e:
+        st.error(f"⚠️ Could not connect to Snowflake: {e}")
+        st.info(
+            "**Fix:** open this app's **Settings → Secrets** on Streamlit Cloud, "
+            "paste the full secrets block (including the Snowflake private key as a "
+            "single-line `SNOWFLAKE_PRIVATE_KEY_B64` value), then click **Save** and "
+            "**Reboot**."
+        )
+        st.stop()
 
 tab1, tab2, tab3 = st.tabs([
     "📊 I-65 Spread & Access Pulse",

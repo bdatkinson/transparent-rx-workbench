@@ -1,0 +1,10 @@
+name: transparent_rx
+channels:
+  - snowflake
+dependencies:
+  - streamlit
+  - snowflake-snowpark-python
+  - pandas
+  - plotly
+  - cryptography
+  - snowflake-connector-python
