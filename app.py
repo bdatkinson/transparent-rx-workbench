@@ -117,11 +117,20 @@ def get_conn():
         with open(key_path, "rb") as f:
             key_data = f.read()
     pkey = serialization.load_pem_private_key(key_data, password=None)
-    return snowflake.connector.connect(
-        account=ACCOUNT, user=USER, role=ROLE, warehouse=WAREHOUSE,
-        database=DB, private_key=pkey,
-        login_timeout=45, network_timeout=45,
-    )
+    import socket
+    socket.setdefaulttimeout(45)
+    print("SF_CONNECT_START account=%s" % ACCOUNT, flush=True)
+    try:
+        conn = snowflake.connector.connect(
+            account=ACCOUNT, user=USER, role=ROLE, warehouse=WAREHOUSE,
+            database=DB, private_key=pkey,
+            login_timeout=45, network_timeout=45, insecure_mode=True,
+        )
+        print("SF_CONNECT_DONE", flush=True)
+        return conn
+    except Exception as e:
+        print("SF_CONNECT_ERROR %r" % e, flush=True)
+        raise
 
 
 def query(sql, params=None):
