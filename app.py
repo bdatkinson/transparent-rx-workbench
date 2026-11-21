@@ -81,27 +81,37 @@ PERSONAS = {
 # ---------------------------------------------------------------------------
 METHODOLOGY = {
     "formula": (
-        "Spread = total reimbursement − pass-through benchmark, where the "
-        "pass-through benchmark = NADAC ingredient cost + a $10.50 dispensing-fee benchmark."
+        "Spread = total reimbursement − pass-through benchmark, where the benchmark = "
+        "(NADAC ingredient cost × units) + (a fixed $10.50 professional dispensing fee per prescription)."
     ),
     "nadac": (
-        "NADAC (National Average Drug Acquisition Cost) is the CMS-published average "
-        "invoice price pharmacies pay for a drug — ingredient cost only, excluding any "
-        "dispensing fee."
+        "NADAC (National Average Drug Acquisition Cost) is CMS's estimate of the average "
+        "invoice price pharmacies actually pay for a drug — ingredient cost only. Published "
+        "weekly at the 11-digit NDC level (computed for CMS by Myers and Stauffer LC). It "
+        "excludes off-invoice rebates, price concessions, and the professional dispensing fee."
     ),
     "dispensing_fee": (
-        "$10.50 is a fixed dispensing-fee benchmark used to represent the fair cost of "
-        "dispensing a prescription. (Source under verification.)"
+        "$10.50 is a fixed national-approximation dispensing-fee benchmark — NOT the "
+        "published state rate. Kentucky Medicaid pays $10.64 per claim; Tennessee pays a "
+        "tiered $13.16 (<65,000 Rx/yr) or $9.02 (≥65,000 Rx/yr). Using $10.50 simplifies the "
+        "KY/TN benchmark, so the displayed spread is approximate."
     ),
     "sources": (
-        "Computed from `V_KY_TN_SPREAD_ANALYSIS`, built on CMS public data — NADAC, "
-        "Medicaid State Drug Utilization Data (SDUD), and Medicare Part D prescriber data. "
-        "Aggregated to state / therapeutic-class level; zero PHI."
+        "Computed from `V_KY_TN_SPREAD_ANALYSIS` on CMS public data (zero PHI): NADAC "
+        "(weekly, 2026), Medicaid State Drug Utilization Data 2025, and Medicare Part D "
+        "Prescribers (2024), aggregated to state / therapeutic-class level."
     ),
     "caveats": [
+        "NADAC is ingredient cost only and excludes off-invoice rebates/concessions — spread here is a conservative floor estimate.",
+        "$10.50 is a national proxy, not the KY/TN fee (KY $10.64; TN $13.16 / $9.02).",
         "NADAC is a national average; actual acquisition cost varies by pharmacy and geography.",
-        "$10.50 is a fixed benchmark, not a plan-negotiated dispensing fee.",
         "Figures are per-prescription averages across Kentucky and Tennessee.",
+    ],
+    "citations": [
+        ("CMS — NADAC methodology (Dec 2024)", "https://www.medicaid.gov/medicaid-chip-program-information/by-topics/prescription-drugs/ful-nadac-downloads/nadacmethodology.pdf"),
+        ("KY SFY 2025 Pharmacy Benefits Report ($10.64)", "https://apps.legislature.ky.gov/AgencyReports/IJC/AR/HFS/DeptMS/PB/2025%2011.pdf"),
+        ("TennCare dispensing-fee SPA notice (eff. Nov 1, 2023)", "https://www.tn.gov/content/dam/tn/tenncare/archive/PharmacyDispensingFeesSPAPublic%20Notice.pdf"),
+        ("DOL/EBSA — PBM Fee Disclosure final rule (Oct 2026)", "https://www.dol.gov/agencies/ebsa/about-ebsa/our-activities/resource-center/fact-sheets/pharmacy-benefit-manager-fee-disclosure-final-rule"),
     ],
 }
 
@@ -448,6 +458,9 @@ with tab1:
         st.markdown("**Caveats.**")
         for c in METHODOLOGY["caveats"]:
             st.markdown(f"- {c}")
+        st.markdown("**References.**")
+        for title, url in METHODOLOGY["citations"]:
+            st.markdown(f"- [{title}]({url})")
 
     st.subheader("Spread gap per prescription — KY vs TN (top therapeutic classes)")
     st.markdown(
