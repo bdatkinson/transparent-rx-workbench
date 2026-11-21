@@ -77,7 +77,7 @@ PERSONAS = {
 
 # ---------------------------------------------------------------------------
 # Methodology — single source of truth for the "how is this calculated?" note.
-# (The $10.50 dispensing-fee justification is under active research verification.)
+# ($10.50 = national-approximation proxy; KY $10.64 / TN $13.16–$9.02 per CMS. Labeled, not state-specific.)
 # ---------------------------------------------------------------------------
 METHODOLOGY = {
     "formula": (
@@ -447,7 +447,7 @@ with tab1:
     c1.metric("Medicaid reimbursement", fmt_dollars(headline["reimbursed"]))
     c2.metric("Pass-through benchmark", fmt_dollars(headline["benchmark"]))
     c3.metric("Estimated spread leakage", fmt_dollars(headline["spread"]),
-              help="Reimbursement minus fair NADAC + $10.50 dispensing-fee benchmark")
+              help="Reimbursement minus NADAC + $10.50 dispensing-fee benchmark (national proxy)")
     c4.metric("Distinct NDCs joined", f"{headline['ndc']:,}")
 
     with st.expander("ⓘ How these numbers are calculated (methodology & sources)"):
@@ -465,11 +465,11 @@ with tab1:
     st.subheader("Spread gap per prescription — KY vs TN (top therapeutic classes)")
     st.markdown(
         badge("DETERMINISTIC · NO AI MODEL", PALETTE["navy"]) + "&nbsp;"
-        + badge("NADAC + $10.50 BENCHMARK", PALETTE["teal"]),
+        + badge("NADAC + $10.50 NATIONAL PROXY", PALETTE["teal"]),
         unsafe_allow_html=True,
     )
     st.plotly_chart(build_dumbbell(spread_df), width="stretch")
-    st.caption("Amber/navy dot = average plan reimbursement · grey dot = NADAC invoice-acquisition + $10.50 benchmark. The gap is spread.")
+    st.caption("Amber/navy dot = average plan reimbursement · grey dot = NADAC invoice-acquisition + $10.50 benchmark (national proxy). The gap is spread.")
 
     st.subheader("I-65 prescriber map (Louisville vs Nashville)")
     map_df = (partd_df.groupby(["METRO_CITY", "STATE", "LATITUDE", "LONGITUDE"])
