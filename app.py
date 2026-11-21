@@ -99,10 +99,18 @@ def detect_phi(text: str):
 # ---------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def get_conn():
-    if st.secrets.get("SNOWFLAKE_PRIVATE_KEY"):
-        key_data = st.secrets["SNOWFLAKE_PRIVATE_KEY"].encode()
+    key_secret = st.secrets.get("SNOWFLAKE_PRIVATE_KEY")
+    if key_secret:
+        key_data = key_secret.encode()
     else:
-        with open(os.path.expanduser(PRIVATE_KEY_PATH), "rb") as f:
+        key_path = os.path.expanduser(PRIVATE_KEY_PATH)
+        if not os.path.exists(key_path):
+            raise RuntimeError(
+                "Snowflake private key not configured. On Streamlit Cloud, open "
+                "Settings → Secrets and add SNOWFLAKE_PRIVATE_KEY (the full PEM "
+                "body) as a multi-line string, then Save + Reboot."
+            )
+        with open(key_path, "rb") as f:
             key_data = f.read()
     pkey = serialization.load_pem_private_key(key_data, password=None)
     return snowflake.connector.connect(
@@ -323,6 +331,18 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 if "query_count" not in st.session_state:
     st.session_state.query_count = 0
+
+# Connectivity guard — fail loudly and clearly if Snowflake isn't reachable
+try:
+    get_conn()
+except Exception as e:
+    st.error(f"⚠️ Could not connect to Snowflake: {e}")
+    st.info(
+        "**Fix:** open this app's **Settings → Secrets** on Streamlit Cloud, "
+        "paste the full secrets block — including `SNOWFLAKE_PRIVATE_KEY` as a "
+        "multi-line PEM string — then click **Save** and **Reboot**."
+    )
+    st.stop()
 
 tab1, tab2, tab3 = st.tabs([
     "📊 I-65 Spread & Access Pulse",
