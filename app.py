@@ -9,6 +9,7 @@ Tabs:
 
 Auth: key-pair as RX_APP_ROLE (least privilege). Zero end-user login.
 """
+import base64
 import json
 import os
 import re
@@ -99,16 +100,19 @@ def detect_phi(text: str):
 # ---------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def get_conn():
-    key_secret = st.secrets.get("SNOWFLAKE_PRIVATE_KEY")
-    if key_secret:
-        key_data = key_secret.encode()
+    key_b64 = st.secrets.get("SNOWFLAKE_PRIVATE_KEY_B64")
+    key_pem = st.secrets.get("SNOWFLAKE_PRIVATE_KEY")
+    if key_b64:
+        key_data = base64.b64decode(key_b64)
+    elif key_pem:
+        key_data = key_pem.encode()
     else:
         key_path = os.path.expanduser(PRIVATE_KEY_PATH)
         if not os.path.exists(key_path):
             raise RuntimeError(
                 "Snowflake private key not configured. On Streamlit Cloud, open "
-                "Settings → Secrets and add SNOWFLAKE_PRIVATE_KEY (the full PEM "
-                "body) as a multi-line string, then Save + Reboot."
+                "Settings → Secrets and add SNOWFLAKE_PRIVATE_KEY_B64 (base64 of "
+                "the PEM file), then Save + Reboot."
             )
         with open(key_path, "rb") as f:
             key_data = f.read()
@@ -339,8 +343,9 @@ except Exception as e:
     st.error(f"⚠️ Could not connect to Snowflake: {e}")
     st.info(
         "**Fix:** open this app's **Settings → Secrets** on Streamlit Cloud, "
-        "paste the full secrets block — including `SNOWFLAKE_PRIVATE_KEY` as a "
-        "multi-line PEM string — then click **Save** and **Reboot**."
+        "paste the full secrets block (including the Snowflake private key as a "
+        "single-line `SNOWFLAKE_PRIVATE_KEY_B64` value), then click **Save** and "
+        "**Reboot**."
     )
     st.stop()
 
