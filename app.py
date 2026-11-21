@@ -76,6 +76,37 @@ PERSONAS = {
 }
 
 # ---------------------------------------------------------------------------
+# Methodology — single source of truth for the "how is this calculated?" note.
+# (The $10.50 dispensing-fee justification is under active research verification.)
+# ---------------------------------------------------------------------------
+METHODOLOGY = {
+    "formula": (
+        "Spread = total reimbursement − pass-through benchmark, where the "
+        "pass-through benchmark = NADAC ingredient cost + a $10.50 dispensing-fee benchmark."
+    ),
+    "nadac": (
+        "NADAC (National Average Drug Acquisition Cost) is the CMS-published average "
+        "invoice price pharmacies pay for a drug — ingredient cost only, excluding any "
+        "dispensing fee."
+    ),
+    "dispensing_fee": (
+        "$10.50 is a fixed dispensing-fee benchmark used to represent the fair cost of "
+        "dispensing a prescription. (Source under verification.)"
+    ),
+    "sources": (
+        "Computed from `V_KY_TN_SPREAD_ANALYSIS`, built on CMS public data — NADAC, "
+        "Medicaid State Drug Utilization Data (SDUD), and Medicare Part D prescriber data. "
+        "Aggregated to state / therapeutic-class level; zero PHI."
+    ),
+    "caveats": [
+        "NADAC is a national average; actual acquisition cost varies by pharmacy and geography.",
+        "$10.50 is a fixed benchmark, not a plan-negotiated dispensing fee.",
+        "Figures are per-prescription averages across Kentucky and Tennessee.",
+    ],
+}
+
+
+# ---------------------------------------------------------------------------
 # PHI guardrail (client-side pre-flight regex — zero-PHI intercept)
 # ---------------------------------------------------------------------------
 PHI_PATTERNS = {
@@ -409,7 +440,21 @@ with tab1:
               help="Reimbursement minus fair NADAC + $10.50 dispensing-fee benchmark")
     c4.metric("Distinct NDCs joined", f"{headline['ndc']:,}")
 
+    with st.expander("ⓘ How these numbers are calculated (methodology & sources)"):
+        st.markdown(f"**Formula.** {METHODOLOGY['formula']}")
+        st.markdown(f"**NADAC.** {METHODOLOGY['nadac']}")
+        st.markdown(f"**Dispensing fee.** {METHODOLOGY['dispensing_fee']}")
+        st.markdown(f"**Data sources.** {METHODOLOGY['sources']}")
+        st.markdown("**Caveats.**")
+        for c in METHODOLOGY["caveats"]:
+            st.markdown(f"- {c}")
+
     st.subheader("Spread gap per prescription — KY vs TN (top therapeutic classes)")
+    st.markdown(
+        badge("DETERMINISTIC · NO AI MODEL", PALETTE["navy"]) + "&nbsp;"
+        + badge("NADAC + $10.50 BENCHMARK", PALETTE["teal"]),
+        unsafe_allow_html=True,
+    )
     st.plotly_chart(build_dumbbell(spread_df), width="stretch")
     st.caption("Amber/navy dot = average plan reimbursement · grey dot = NADAC invoice-acquisition + $10.50 benchmark. The gap is spread.")
 
@@ -514,14 +559,22 @@ with tab2:
                     st.code(str(result_rows), language="text")
 
                 with st.expander("🔍 Source transparency drawer"):
+                    st.markdown(
+                        "**How to read this.** Every AI answer carries its generated SQL and "
+                        "the policy chunks it grounded on. The **reranker score** (−∞…1) rates "
+                        "relevance — higher is a closer match. Numbers come only from the SQL "
+                        "run against the semantic view, so every figure is traceable to a cited "
+                        "source."
+                    )
                     st.markdown("**Generated SQL**")
                     st.code(sql if sql else "(no SQL)", language="sql")
                     if citations:
-                        st.markdown("**Policy citations (Cortex Search)**")
-                        for c in citations:
+                        st.markdown("**Claim → source mapping (Cortex Search)**")
+                        for i, c in enumerate(citations, 1):
                             st.markdown(
-                                f"- **{c['source_title']}** · {c['section_ref']} "
-                                f"(score {c['score']})\n\n  _{c['chunk'][:240]}..._"
+                                f"**{i}.** `{c['source_title']}` · {c['section_ref']} "
+                                f"· {c['doc_category']} · score {c['score']}\n\n"
+                                f"_{c['chunk'][:240]}..._"
                             )
                     else:
                         st.write("No policy chunks matched.")
