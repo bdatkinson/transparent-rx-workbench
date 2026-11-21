@@ -120,6 +120,7 @@ def get_conn():
     return snowflake.connector.connect(
         account=ACCOUNT, user=USER, role=ROLE, warehouse=WAREHOUSE,
         database=DB, private_key=pkey,
+        login_timeout=45, network_timeout=45,
     )
 
 
