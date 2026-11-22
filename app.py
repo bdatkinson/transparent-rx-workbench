@@ -286,6 +286,21 @@ def load_partd_prescribers():
     return df
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_prescriber_geo():
+    rows, _ = query(f"""
+        SELECT PRSCRBR_NPI, NAME, ADDRESS, CITY, STATE, ZIP,
+               LATITUDE, LONGITUDE, PRECISION
+        FROM {DB}.RAW.PRESCRIBER_GEO
+    """)
+    cols = ["PRSCRBR_NPI", "NAME", "ADDRESS", "CITY", "STATE", "ZIP",
+            "LATITUDE", "LONGITUDE", "PRECISION"]
+    df = pd.DataFrame(rows, columns=cols)
+    df["LATITUDE"] = df["LATITUDE"].astype(float)
+    df["LONGITUDE"] = df["LONGITUDE"].astype(float)
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Cortex orchestrator
 # ---------------------------------------------------------------------------
@@ -453,17 +468,17 @@ def fmt_dollars(x):
 
 
 def build_i65_map(map_df):
-    """I-65 corridor map: Louisville vs Nashville, colored by state, sized by
-    drug cost, with the corridor traced between the two metros."""
+    """I-65 corridor map: individual prescriber practice locations, colored by
+    state, sized by drug cost, with the corridor traced between the two metros."""
     state_colors = {"KY": PALETTE["teal"], "TN": PALETTE["navy"]}
     fig = go.Figure()
 
-    # amber line tracing the I-65 corridor
+    # amber reference line tracing the I-65 corridor between the two metros
     fig.add_trace(go.Scattermap(
-        lat=map_df["LATITUDE"].tolist(),
-        lon=map_df["LONGITUDE"].tolist(),
+        lat=[38.2527, 36.1627],  # Louisville, Nashville city centers
+        lon=[-85.7585, -86.7816],
         mode="lines",
-        line=dict(color=PALETTE["amber"], width=3),
+        line=dict(color=PALETTE["amber"], width=2),
         hoverinfo="skip",
         showlegend=False,
     ))
@@ -478,18 +493,21 @@ def build_i65_map(map_df):
             lon=sub["LONGITUDE"],
             mode="markers",
             marker=dict(
-                size=(sub["total_drug_cost"] / max_cost * 20 + 20).tolist(),
+                size=(sub["total_drug_cost"] / max_cost * 18 + 6).tolist(),
                 color=state_colors[state],
-                opacity=0.9,
+                opacity=0.7,
             ),
             text=sub.apply(
-                lambda r: f"<b>{r['METRO_CITY']}, {r['STATE']}</b><br>"
-                          f"Prescribers: {r['prescribers']:,}<br>"
-                          f"Part D drug cost: ${r['total_drug_cost']:,.0f}",
+                lambda r: (
+                    f"<b>{r['NAME']}</b><br>"
+                    f"{r['CITY']}, {r['STATE']}<br>"
+                    f"Part D drug cost: ${r['total_drug_cost']:,.0f} · {r['n_claims']:,} claims<br>"
+                    f"<i>{r['ADDRESS']} ({r['PRECISION']})</i>"
+                ),
                 axis=1,
             ),
             hoverinfo="text",
-            name=state,
+            name=f"{state} ({len(sub):,})",
         ))
 
     fig.update_layout(
@@ -499,7 +517,7 @@ def build_i65_map(map_df):
             zoom=6,
         ),
         margin=dict(l=0, r=0, t=0, b=0),
-        height=400,
+        height=440,
         paper_bgcolor="rgba(0,0,0,0)",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
     )
@@ -595,14 +613,19 @@ with tab1:
     st.plotly_chart(build_dumbbell(spread_df), width="stretch")
     st.caption("Amber/navy dot = average plan reimbursement · grey dot = NADAC invoice-acquisition + $10.50 benchmark (national proxy). The gap is spread.")
 
-    st.subheader("I-65 prescriber map (Louisville vs Nashville)")
-    map_df = (partd_df.groupby(["METRO_CITY", "STATE", "LATITUDE", "LONGITUDE"])
-              .agg(prescribers=("PRSCRBR_NPI", "nunique"),
-                   total_drug_cost=("PARTD_DRUG_COST", "sum")).reset_index())
+    st.subheader("I-65 prescriber map (individual practice locations)")
+    geo_df = load_prescriber_geo()
+    per_prescriber = (partd_df.groupby("PRSCRBR_NPI")
+                      .agg(total_drug_cost=("PARTD_DRUG_COST", "sum"),
+                           n_claims=("PARTD_CLAIMS", "sum")).reset_index())
+    map_df = per_prescriber.merge(geo_df, on="PRSCRBR_NPI", how="inner")
+    n_street = int((map_df["PRECISION"] == "street").sum())
+    n_zip = int((map_df["PRECISION"] == "zip").sum())
     st.plotly_chart(build_i65_map(map_df), width="stretch")
     st.caption(
-        "Markers are metro centroids (6,500 prescribers each), sized by Part D drug "
-        "cost and colored by state. The amber line traces the I-65 corridor."
+        f"{len(map_df):,} prescribers plotted at their NPPES practice address — "
+        f"{n_street:,} street-level, {n_zip:,} ZIP-centroid. Sized by Part D drug "
+        "cost, colored by state. The amber line traces the I-65 corridor."
     )
 
     st.subheader("High-cost brand prescribers (clinical outreach)")

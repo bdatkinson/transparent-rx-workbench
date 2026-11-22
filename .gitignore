@@ -14,3 +14,6 @@ __pycache__/
 probe_*.py
 peek_csv.py
 audit_account.py
+
+# derived geo data (provider names/addresses; reproducible via scripts)
+prescriber_*.json
