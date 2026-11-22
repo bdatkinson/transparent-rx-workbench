@@ -452,6 +452,60 @@ def fmt_dollars(x):
     return f"${x:,.0f}"
 
 
+def build_i65_map(map_df):
+    """I-65 corridor map: Louisville vs Nashville, colored by state, sized by
+    drug cost, with the corridor traced between the two metros."""
+    state_colors = {"KY": PALETTE["teal"], "TN": PALETTE["navy"]}
+    fig = go.Figure()
+
+    # amber line tracing the I-65 corridor
+    fig.add_trace(go.Scattermap(
+        lat=map_df["LATITUDE"].tolist(),
+        lon=map_df["LONGITUDE"].tolist(),
+        mode="lines",
+        line=dict(color=PALETTE["amber"], width=3),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+
+    max_cost = map_df["total_drug_cost"].max() or 1.0
+    for state in ["KY", "TN"]:
+        sub = map_df[map_df["STATE"] == state]
+        if sub.empty:
+            continue
+        fig.add_trace(go.Scattermap(
+            lat=sub["LATITUDE"],
+            lon=sub["LONGITUDE"],
+            mode="markers",
+            marker=dict(
+                size=(sub["total_drug_cost"] / max_cost * 20 + 20).tolist(),
+                color=state_colors[state],
+                opacity=0.9,
+            ),
+            text=sub.apply(
+                lambda r: f"<b>{r['METRO_CITY']}, {r['STATE']}</b><br>"
+                          f"Prescribers: {r['prescribers']:,}<br>"
+                          f"Part D drug cost: ${r['total_drug_cost']:,.0f}",
+                axis=1,
+            ),
+            hoverinfo="text",
+            name=state,
+        ))
+
+    fig.update_layout(
+        map=dict(
+            style="open-street-map",
+            center=dict(lat=37.2, lon=-86.2),
+            zoom=6,
+        ),
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=400,
+        paper_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+    )
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
@@ -545,8 +599,11 @@ with tab1:
     map_df = (partd_df.groupby(["METRO_CITY", "STATE", "LATITUDE", "LONGITUDE"])
               .agg(prescribers=("PRSCRBR_NPI", "nunique"),
                    total_drug_cost=("PARTD_DRUG_COST", "sum")).reset_index())
-    st.map(map_df.rename(columns={"LATITUDE": "latitude", "LONGITUDE": "longitude"}),
-           size="total_drug_cost")
+    st.plotly_chart(build_i65_map(map_df), width="stretch")
+    st.caption(
+        "Markers are metro centroids (6,500 prescribers each), sized by Part D drug "
+        "cost and colored by state. The amber line traces the I-65 corridor."
+    )
 
     st.subheader("High-cost brand prescribers (clinical outreach)")
     brand_df = partd_df[partd_df["BRAND_GENERIC_FLAG"] == "Brand"]
