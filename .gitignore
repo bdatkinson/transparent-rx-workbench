@@ -17,3 +17,6 @@ audit_account.py
 
 # derived geo data (provider names/addresses; reproducible via scripts)
 prescriber_*.json
+
+# one-off diagnostics
+diag_*.py

@@ -659,11 +659,11 @@ with tab2:
                 f"{fmt_dollars(load_spread_headline()['reimbursed'])} of Medicaid reimbursement "
                 f"(~6.7% spread). 'Lowest net cost ≠ highest rebate.'")
     else:
-        with st.form("query_form", clear_on_submit=False):
-            prompt = st.text_area("Ask Cortex (Cortex Analyst + policy RAG)",
-                                  max_chars=PROMPT_CHAR_CAP,
-                                  placeholder=pcfg["samples"][0])
-            submitted = st.form_submit_button("Run governed query")
+        prompt = st.text_area("Ask Cortex (Cortex Analyst + policy RAG)",
+                              max_chars=PROMPT_CHAR_CAP,
+                              placeholder=pcfg["samples"][0],
+                              key="cortex_prompt")
+        submitted = st.button("Run governed query", type="primary", key="run_query")
 
         if submitted and prompt.strip():
             st.session_state.query_count += 1
