@@ -393,6 +393,20 @@ def set_use_case_status(use_case_id, status, rationale, reviewer):
     """, (status, rationale, reviewer, use_case_id))
 
 
+def roi_calc(lives, claims, spend, spread_pct, rebate_retain_pct, rebate_total,
+             current_admin_pmpm, flat_admin_pmpm):
+    """Estimate pass-through savings across three deterministic drivers:
+    spread elimination, rebate recapture, and admin-fee delta."""
+    spread_savings = (spread_pct / 100.0) * spend
+    rebate_savings = (rebate_retain_pct / 100.0) * rebate_total
+    admin_savings = (current_admin_pmpm - flat_admin_pmpm) * lives * 12
+    total = spread_savings + rebate_savings + admin_savings
+    pct = (total / spend * 100.0) if spend else 0.0
+    per_claim = (total / claims) if claims else 0.0
+    return {"spread": spread_savings, "rebate": rebate_savings, "admin": admin_savings,
+            "total": total, "pct": pct, "per_claim": per_claim}
+
+
 # ---------------------------------------------------------------------------
 # Visualization helpers
 # ---------------------------------------------------------------------------
@@ -483,11 +497,12 @@ if _SIS is None:
         )
         st.stop()
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 I-65 Spread & Access Pulse",
     "🧠 Governed Cortex Workbench",
     "📈 AI Vital Signs & Cost Ledger",
     "🛡 Use-Case Governance",
+    "💰 Pass-Through ROI Simulator",
 ])
 
 # =============================================================================
@@ -765,5 +780,67 @@ with tab4:
                 set_use_case_status(uid, status_map[action], rationale.strip(), reviewer.strip())
                 st.session_state.flash = f"{choice} → {status_map[action]}"
                 st.rerun()
+
+# =============================================================================
+# TAB 5 — Pass-Through ROI Simulator (the "so-what" in dollars)
+# =============================================================================
+with tab5:
+    st.subheader("Pass-Through ROI Simulator")
+    st.caption(
+        "Estimate the savings of moving a plan from spread-priced to pass-through "
+        "pricing. Outputs are estimates — the assumptions are yours to tune."
+    )
+
+    measured = load_spread_headline()
+    measured_pct = (round(measured["spread"] / measured["reimbursed"] * 100, 1)
+                    if measured["reimbursed"] else 6.7)
+
+    with st.form("roi_form"):
+        c1, c2 = st.columns(2)
+        lives = c1.number_input("Covered lives", 1, 1000000, 200)
+        claims = c1.number_input("Annual Rx claims", 1, 10000000, 5000)
+        spend = c1.number_input("Current total annual pharmacy spend ($)", 0, 2000000000, 5000000, step=100000)
+        spread_pct = c2.number_input(
+            "Current PBM spread (% of drug spend)", 0.0, 50.0, measured_pct, step=0.1,
+            help=f"Default = this app's measured I-65 spread rate ({measured_pct}%).",
+        )
+        rebate_retain = c2.number_input("Current PBM rebate retention (%)", 0.0, 100.0, 20.0, step=1.0)
+        rebate_total = c2.number_input("Annual manufacturer rebates ($)", 0, 2000000000, 300000, step=10000)
+        c3, c4 = st.columns(2)
+        current_admin = c3.number_input("Current PBM admin fee ($/PMPM)", 0.0, 50.0, 3.00, step=0.25)
+        flat_admin = c4.number_input("Pass-through flat fee ($/PMPM)", 0.0, 50.0, 0.75, step=0.25)
+        calc = st.form_submit_button("Calculate savings")
+
+    if calc:
+        r = roi_calc(lives, claims, spend, spread_pct, rebate_retain, rebate_total,
+                     current_admin, flat_admin)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Estimated annual savings", fmt_dollars(r["total"]))
+        m2.metric("Net-cost reduction", f"{r['pct']:.1f}%")
+        m3.metric("Savings per claim", f"${r['per_claim']:.2f}")
+        st.caption(
+            f"Breakdown — spread eliminated {fmt_dollars(r['spread'])} · "
+            f"rebates recaptured {fmt_dollars(r['rebate'])} · "
+            f"admin-fee delta {fmt_dollars(r['admin'])}"
+        )
+
+    st.markdown("---")
+    st.subheader("Anchor: Mavericks case study (verified)")
+    st.markdown(
+        badge("REAL CASE STUDY", PALETTE["green"]) + "&nbsp;"
+        + badge("Q1 OF IMPLEMENTATION", PALETTE["navy"]),
+        unsafe_allow_html=True,
+    )
+    a1, a2, a3 = st.columns(3)
+    a1.metric("Net-cost reduction", "−12.9%")
+    a2.metric("Saved per Cost Plus-transitioned claim", "$70.80")
+    a3.metric("Claims shifted to Cost Plus", "15.33%")
+    st.caption(
+        "Dallas Mavericks, first quarter under AffirmedRx pass-through (from the "
+        "case-study notebook). Pre-rebate cost fell −10.9%; with 100% rebate "
+        "pass-through the net reduction reached −12.9%. The incumbent baseline "
+        "spread was not disclosed, and Cost Plus sourcing adds a drug-cost driver "
+        "not modeled above — so this simulator is intentionally conservative."
+    )
 
 st.caption("Transparent Rx · Module B — Streamlit app + Cortex orchestrator")
